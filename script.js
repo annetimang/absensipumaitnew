@@ -4,7 +4,7 @@ var DEFAULT_USERS = [
         name: "Anne Timang",
         email: "anne.timang@student.president.ac.id",
         division: "BPH",
-        role: "Sekretaris",
+        role: "Ketua",
         password: "admin123",
         createdAt: new Date().toISOString()
     },
@@ -102,6 +102,21 @@ function render() {
         app.innerHTML = renderForgot();
     } else if (currentView === 'dashboard') {
         app.innerHTML = renderDashboard();
+        
+        // Eksekusi langsung fungsi pendukung admin & QR code tanpa jeda
+        if (currentUser && (currentUser.division === 'BPH' || currentUser.role === 'Ketua' || currentUser.role === 'Admin')) {
+            updateAdminTable();
+            var cur = getCurrentSession();
+            if (cur) {
+                setTimeout(function() {
+                    var c = document.getElementById('qrCodeCanvas');
+                    if (c) {
+                        c.innerHTML = '';
+                        QRCode.toCanvas(c, cur.code, { width: 80, margin: 1 });
+                    }
+                }, 20);
+            }
+        }
     }
 }
 
@@ -306,10 +321,6 @@ function createAttendanceSession() {
     att[session.id] = { title: title, code: code, records: {} };
     saveAttendance(att);
     render();
-    setTimeout(function() {
-        var canvas = document.getElementById('qrCodeCanvas');
-        if (canvas) QRCode.toCanvas(canvas, code, { width: 80, margin: 1 });
-    }, 50);
 }
 
 function submitAttendance(e) {
@@ -385,13 +396,10 @@ function exportAttendancePDF() {
     doc.save('Rekap_Absensi_' + Date.now() + '.pdf');
 }
 
+// Inisialisasi awal saat aplikasi dimuat
 render();
-if (currentUser && (currentUser.division === 'BPH' || currentUser.role === 'Ketua' || currentUser.role === 'Admin')) {
-    updateAdminTable();
-    var cur = getCurrentSession();
-    if (cur) setTimeout(function() { var c = document.getElementById('qrCodeCanvas'); if(c) QRCode.toCanvas(c, cur.code, {width:80, margin:1}); }, 50);
-}
 
+// Interval global untuk memperbarui timer hitung mundur dan sinkronisasi tampilan secara mulus
 setInterval(function() {
     var session = getCurrentSession();
     if (session) {
@@ -402,19 +410,9 @@ setInterval(function() {
             var m = Math.floor(left/60);
             var s = left%60;
             timer.innerText = m + 'm ' + (s < 10 ? '0' : '') + s + 's';
-            if (left <= 0) setTimeout(function() { render(); }, 500);
+            if (left <= 0) {
+                // Jangan panggil render berulang jika tidak diperlukan agar tidak mengganggu input
+            }
         }
     }
 }, 1000);
-
-var observer = new MutationObserver(function() {
-    if (currentUser && (currentUser.division === 'BPH' || currentUser.role === 'Ketua' || currentUser.role === 'Admin')) {
-        updateAdminTable();
-        var cur = getCurrentSession();
-        if (cur) {
-            var c = document.getElementById('qrCodeCanvas');
-            if(c && !c.hasChildNodes()) QRCode.toCanvas(c, cur.code, {width:80, margin:1});
-        }
-    }
-});
-observer.observe(document.getElementById('app'), { childList: true, subtree: true });
