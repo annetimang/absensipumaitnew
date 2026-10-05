@@ -1,17 +1,17 @@
 var DEFAULT_USERS = [
     {
-        idNum: "030202500023",
-        name: "Anne Timang",
-        email: "anne.timang@student.president.ac.id",
+        idNum: "030202500008",
+        name: "Ferdi Arga Varian",
+        email: "ferdi.varian@student.president.ac.id",
         division: "BPH",
         role: "Ketua",
         password: "admin123",
         createdAt: new Date().toISOString()
     },
     {
-        idNum: "030202500008",
-        name: "Ferdi Arga Varian",
-        email: "ferdi.varian@student.president.ac.id",
+        idNum: "0302025000023",
+        name: "Anne Timang",
+        email: "anne.timang@student.president.ac.id",
         division: "BPH",
         role: "Admin",
         password: "admin123",
