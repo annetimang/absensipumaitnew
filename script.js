@@ -103,7 +103,9 @@ function render() {
     } else if (currentView === 'dashboard') {
         app.innerHTML = renderDashboard();
         
-        if (currentUser && (currentUser.division === 'BPH' || currentUser.role === 'Ketua' || currentUser.role === 'Admin')) {
+        var isAdmin = currentUser && (currentUser.division === 'BPH' || currentUser.role === 'Ketua' || currentUser.role === 'Admin');
+        
+        if (isAdmin) {
             updateAdminTable();
             var cur = getCurrentSession();
             if (cur) {
@@ -111,7 +113,6 @@ function render() {
                     var c = document.getElementById('qrCodeCanvas');
                     if (c) {
                         c.innerHTML = '';
-                        // Membuat QR code yang jika discan/diklik otomatis mengisi kode absen
                         QRCode.toCanvas(c, cur.code, { width: 80, margin: 1 }, function (error) {
                             if (!error) {
                                 c.style.cursor = 'pointer';
@@ -120,7 +121,6 @@ function render() {
                                     if (inputCode) {
                                         inputCode.value = cur.code;
                                         inputCode.focus();
-                                        alert('Kode sesi ' + cur.code + ' berhasil dimasukkan secara otomatis ke form kehadiran!');
                                     }
                                 };
                             }
@@ -292,7 +292,7 @@ function renderDashboard() {
                             '<div id="adminSessionBox" class="mt-4 pt-4 border-t border-puma-900/60">' + renderAdminActiveSession(currentSession) + '</div>' +
                             '</div>';
     } else {
-        adminPanelContent = '<div class="py-8 text-center text-xs text-puma-300">Hanya BPH, Ketua, atau Admin yang dapat membuat sesi presensi.</div>';
+        adminPanelContent = '<div class="py-8 text-center text-xs text-puma-300">Sesi presensi diatur oleh BPH / Admin. Silakan masukkan kode absen atau klik QR di atas.</div>';
     }
 
     return '<nav class="clean-card border-b border-puma-900/60 sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">' +
@@ -308,7 +308,7 @@ function renderDashboard() {
            '<div class="clean-card p-6 rounded-2xl flex flex-col justify-between border-puma-600/30"><div><span class="text-[10px] text-puma-400 font-semibold tracking-wider uppercase block mb-3">Identitas Pengguna</span><div class="space-y-2 text-xs"><div><span class="text-puma-400 text-[10px]">Nama</span><p class="font-semibold text-white">' + currentUser.name + '</p></div><div><span class="text-puma-400 text-[10px]">Email</span><p class="font-medium text-puma-200 truncate">' + currentUser.email + '</p></div></div></div><div class="mt-4 pt-3 border-t border-puma-900/50 flex justify-between text-[11px] text-puma-400"><span>President University</span><span class="text-emerald-400 font-medium">Terverifikasi</span></div></div>' +
            '</div>' +
            '<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">' +
-           '<div class="clean-card p-6 rounded-2xl"><div class="flex items-center justify-between mb-4"><h3 class="text-sm font-bold text-white flex items-center"><i class="fa-solid fa-qrcode text-puma-400 mr-2"></i> Generator Sesi Absen</h3>' + (isAdmin ? '<span class="text-[10px] text-emerald-400 font-semibold">Akses Admin</span>' : '<span class="text-[10px] text-rose-400">Khusus Admin</span>') + '</div>' + adminPanelContent + '</div>' +
+           '<div class="clean-card p-6 rounded-2xl"><div class="flex items-center justify-between mb-4"><h3 class="text-sm font-bold text-white flex items-center"><i class="fa-solid fa-qrcode text-puma-400 mr-2"></i> Sesi Presensi Aktif</h3>' + (isAdmin ? '<span class="text-[10px] text-emerald-400 font-semibold">Akses Admin</span>' : '<span class="text-[10px] text-blue-400">Scan / Lihat Sesi</span>') + '</div>' + adminPanelContent + '</div>' +
            '<div class="clean-card p-6 rounded-2xl flex flex-col justify-between"><div><div class="flex items-center space-x-2 mb-4"><h3 class="text-sm font-bold text-white"><i class="fa-solid fa-clipboard-user text-puma-400 mr-2"></i> Input Kehadiran</h3></div><div id="memberSessionStatus" class="mb-4">' + renderMemberSessionStatus(currentSession) + '</div><form onsubmit="submitAttendance(event)" autocomplete="off" class="space-y-3"><div><label class="block text-[11px] font-medium text-puma-300 mb-1">Kode Absen / Scan QR</label><input type="text" id="inputAttendanceCode" autocomplete="off" required placeholder="PUMA-XXXX" class="clean-input w-full px-3.5 py-2.5 rounded-xl text-xs uppercase font-mono tracking-wider"></div><div><label class="block text-[11px] font-medium text-puma-300 mb-1">Status Kehadiran</label><select id="inputAttendanceStatus" required class="clean-input w-full px-3.5 py-2.5 rounded-xl text-xs"><option value="present">Present (Hadir)</option><option value="sick">Sick (Sakit)</option><option value="permit">Permit (Izin)</option></select></div><button type="submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl text-xs transition">Kirim Kehadiran</button></form></div><div class="mt-6 pt-4 border-t border-puma-900/60 flex justify-between text-xs text-puma-400"><span>Status:</span><span id="myAttendanceBadge" class="font-semibold">-</span></div></div>' +
            '</div>' +
            adminSection +
@@ -359,17 +359,20 @@ function submitAttendance(e) {
     var session = getCurrentSession();
     
     if (!session || new Date().getTime() > session.expiresAt) {
-        alert('Sesi tidak valid atau telah berakhir.');
+        alert('Sesi presensi tidak valid atau telah berakhir.');
         return;
     }
     if (code !== session.code) {
-        alert('Kode absen salah!');
+        alert('Kode absen salah! Pastikan memasukkan kode yang benar.');
         return;
     }
+    
     var att = getAttendance();
     if (!att[session.id]) {
         att[session.id] = { title: session.title, code: session.code, records: {} };
     }
+    
+    // Simpan data presensi berdasarkan NIM user yang sedang login
     att[session.id].records[currentUser.idNum] = { 
         status: status, 
         timestamp: new Date().toISOString() 
@@ -391,10 +394,14 @@ function updateAdminTable() {
     users.forEach(function(u, idx) {
         var rec = records[u.idNum];
         var statusBadge = '<span class="text-amber-400">Belum</span>';
+        var timeStr = '-';
+        
         if (rec) {
             var colorClass = rec.status === 'present' ? 'text-emerald-400' : (rec.status === 'sick' ? 'text-blue-400' : 'text-purple-400');
             statusBadge = '<span class="' + colorClass + ' font-semibold">' + rec.status.toUpperCase() + '</span>';
+            timeStr = new Date(rec.timestamp).toLocaleTimeString();
         }
+        
         tbody.innerHTML += '<tr>' +
                            '<td class="px-3 py-2 text-puma-400">' + (idx + 1) + '</td>' +
                            '<td class="px-3 py-2 font-medium text-white">' + u.name + '</td>' +
@@ -402,7 +409,7 @@ function updateAdminTable() {
                            '<td class="px-3 py-2">' + u.division + '</td>' +
                            '<td class="px-3 py-2 text-puma-300">' + u.role + '</td>' +
                            '<td class="px-3 py-2 text-center">' + statusBadge + '</td>' +
-                           '<td class="px-3 py-2 text-right font-mono">' + (rec ? new Date(rec.timestamp).toLocaleTimeString() : '-') + '</td>' +
+                           '<td class="px-3 py-2 text-right font-mono">' + timeStr + '</td>' +
                            '</tr>';
     });
 }
@@ -441,6 +448,7 @@ function exportAttendancePDF() {
 
 render();
 
+// Sinkronisasi real-time periodik setiap detik untuk mendeteksi perubahan sesi dan timer
 setInterval(function() {
     var session = getCurrentSession();
     if (session) {
