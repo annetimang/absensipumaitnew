@@ -9,7 +9,7 @@ var DEFAULT_USERS = [
         createdAt: new Date().toISOString()
     },
     {
-        idNum: "0302025000023",
+        idNum: "030202500023",
         name: "Anne Timang",
         email: "anne.timang@student.president.ac.id",
         division: "BPH",
@@ -103,7 +103,6 @@ function render() {
     } else if (currentView === 'dashboard') {
         app.innerHTML = renderDashboard();
         
-        // Eksekusi langsung fungsi pendukung admin & QR code tanpa jeda
         if (currentUser && (currentUser.division === 'BPH' || currentUser.role === 'Ketua' || currentUser.role === 'Admin')) {
             updateAdminTable();
             var cur = getCurrentSession();
@@ -116,6 +115,21 @@ function render() {
                     }
                 }, 20);
             }
+        } else {
+            // Cek status kehadiran anggota pada sesi aktif
+            var session = getCurrentSession();
+            var badge = document.getElementById('myAttendanceBadge');
+            if (session && badge) {
+                var att = getAttendance();
+                var records = att[session.id] ? att[session.id].records : {};
+                if (records[currentUser.idNum]) {
+                    badge.innerText = 'Hadir (' + new Date(records[currentUser.idNum].timestamp).toLocaleTimeString() + ')';
+                    badge.className = 'font-semibold text-emerald-400';
+                } else {
+                    badge.innerText = 'Belum Absen';
+                    badge.className = 'font-semibold text-amber-400';
+                }
+            }
         }
     }
 }
@@ -127,14 +141,14 @@ function renderLogin() {
            '<form onsubmit="handleLogin(event)" autocomplete="off" class="space-y-4">' +
            '<div>' +
            '<label class="block text-xs font-medium text-puma-300 mb-1.5">Student ID (NIM)</label>' +
-           '<input type="text" id="loginId" autocomplete="off" required placeholder="0302025000" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm">' +
+           '<input type="text" id="loginId" autocomplete="off" required placeholder="030202500023" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm">' +
            '</div>' +
            '<div>' +
            '<div class="flex justify-between items-center mb-1.5">' +
            '<label class="block text-xs font-medium text-puma-300">Kata Sandi</label>' +
            '<button type="button" onclick="navigateTo(\'forgot\')" class="text-xs text-puma-400 hover:text-white transition">Lupa Sandi?</button>' +
            '</div>' +
-           '<input type="password" id="loginPass" autocomplete="new-password" required placeholder="Enter your password" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm">' +
+           '<input type="password" id="loginPass" autocomplete="new-password" required placeholder="••••••••" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm">' +
            '</div>' +
            '<button type="submit" class="w-full py-3 bg-puma-600 hover:bg-puma-500 text-white font-medium rounded-xl text-sm shadow transition mt-2">Masuk ke Portal</button>' +
            '</form>' +
@@ -325,8 +339,10 @@ function createAttendanceSession() {
 
 function submitAttendance(e) {
     e.preventDefault();
-    var code = document.getElementById('inputAttendanceCode').value.trim().toUpperCase();
+    var codeInput = document.getElementById('inputAttendanceCode');
+    var code = codeInput ? codeInput.value.trim().toUpperCase() : '';
     var session = getCurrentSession();
+    
     if (!session || new Date().getTime() > session.expiresAt) {
         alert('Sesi tidak valid atau telah berakhir.');
         return;
@@ -336,9 +352,12 @@ function submitAttendance(e) {
         return;
     }
     var att = getAttendance();
-    if (!att[session.id]) att[session.id] = { records: {} };
+    if (!att[session.id]) {
+        att[session.id] = { title: session.title, code: session.code, records: {} };
+    }
     att[session.id].records[currentUser.idNum] = { timestamp: new Date().toISOString() };
     saveAttendance(att);
+    
     alert('Kehadiran berhasil dicatat!');
     render();
 }
@@ -350,6 +369,7 @@ function updateAdminTable() {
     var session = getCurrentSession();
     var records = session && getAttendance()[session.id] ? getAttendance()[session.id].records : {};
     tbody.innerHTML = '';
+    
     users.forEach(function(u, idx) {
         var rec = records[u.idNum];
         tbody.innerHTML += '<tr>' +
@@ -396,10 +416,8 @@ function exportAttendancePDF() {
     doc.save('Rekap_Absensi_' + Date.now() + '.pdf');
 }
 
-// Inisialisasi awal saat aplikasi dimuat
 render();
 
-// Interval global untuk memperbarui timer hitung mundur dan sinkronisasi tampilan secara mulus
 setInterval(function() {
     var session = getCurrentSession();
     if (session) {
@@ -410,9 +428,6 @@ setInterval(function() {
             var m = Math.floor(left/60);
             var s = left%60;
             timer.innerText = m + 'm ' + (s < 10 ? '0' : '') + s + 's';
-            if (left <= 0) {
-                // Jangan panggil render berulang jika tidak diperlukan agar tidak mengganggu input
-            }
         }
     }
 }, 1000);
