@@ -1,3 +1,17 @@
+// Konfigurasi Firebase Realtime Database
+var firebaseConfig = {
+    apiKey: "AIzaSyD-puma-it-portal-key",
+    authDomain: "puma-it-portal.firebaseapp.com",
+    databaseURL: "https://puma-it-portal-default-rtdb.firebaseio.com",
+    projectId: "puma-it-portal",
+    storageBucket: "puma-it-portal.appspot.com",
+    messagingSenderId: "1234567890",
+    appId: "1:123456:web:abcdef"
+};
+
+firebase.initializeApp(firebaseConfig);
+var db = firebase.database();
+
 var DEFAULT_USERS = [
     {
         idNum: "030202500008",
@@ -19,42 +33,27 @@ var DEFAULT_USERS = [
     }
 ];
 
-function getUsers() {
-    var users = JSON.parse(localStorage.getItem('puma_users'));
-    if (!users) {
-        users = DEFAULT_USERS;
-        localStorage.setItem('puma_users', JSON.stringify(users));
-    }
-    return users;
-}
-
-function saveUsers(users) {
-    localStorage.setItem('puma_users', JSON.stringify(users));
-}
-
-function getAttendance() {
-    var att = JSON.parse(localStorage.getItem('puma_attendance'));
-    if (!att) {
-        att = {};
-        localStorage.setItem('puma_attendance', JSON.stringify(att));
-    }
-    return att;
-}
-
-function saveAttendance(att) {
-    localStorage.setItem('puma_attendance', JSON.stringify(att));
-}
-
-function getCurrentSession() {
-    return JSON.parse(localStorage.getItem('puma_current_session')) || null;
-}
-
-function saveCurrentSession(session) {
-    localStorage.setItem('puma_current_session', JSON.stringify(session));
-}
-
 var currentUser = JSON.parse(localStorage.getItem('puma_logged_in_user')) || null;
 var currentView = currentUser ? 'dashboard' : 'login';
+var activeSession = null;
+var allUsersData = [];
+
+// Listener Real-Time dari Database Cloud
+db.ref('users').on('value', function(snapshot) {
+    var val = snapshot.val();
+    if (!val) {
+        db.ref('users').set(DEFAULT_USERS);
+        allUsersData = DEFAULT_USERS;
+    } else {
+        allUsersData = Array.isArray(val) ? val : Object.values(val);
+    }
+    if (currentView === 'dashboard') render();
+});
+
+db.ref('current_session').on('value', function(snapshot) {
+    activeSession = snapshot.val();
+    if (currentView === 'dashboard') render();
+});
 
 function navigateTo(view) {
     currentView = view;
@@ -107,19 +106,18 @@ function render() {
         
         if (isAdmin) {
             updateAdminTable();
-            var cur = getCurrentSession();
-            if (cur) {
+            if (activeSession) {
                 setTimeout(function() {
                     var c = document.getElementById('qrCodeCanvas');
                     if (c) {
                         c.innerHTML = '';
-                        QRCode.toCanvas(c, cur.code, { width: 80, margin: 1 }, function (error) {
+                        QRCode.toCanvas(c, activeSession.code, { width: 80, margin: 1 }, function (error) {
                             if (!error) {
                                 c.style.cursor = 'pointer';
                                 c.onclick = function() {
                                     var inputCode = document.getElementById('inputAttendanceCode');
                                     if (inputCode) {
-                                        inputCode.value = cur.code;
+                                        inputCode.value = activeSession.code;
                                         inputCode.focus();
                                     }
                                 };
@@ -129,18 +127,18 @@ function render() {
                 }, 20);
             }
         } else {
-            var session = getCurrentSession();
             var badge = document.getElementById('myAttendanceBadge');
-            if (session && badge) {
-                var att = getAttendance();
-                var records = att[session.id] ? att[session.id].records : {};
-                if (records[currentUser.idNum]) {
-                    badge.innerText = 'Status: ' + records[currentUser.idNum].status.toUpperCase() + ' (' + new Date(records[currentUser.idNum].timestamp).toLocaleTimeString() + ')';
-                    badge.className = 'font-semibold text-emerald-400';
-                } else {
-                    badge.innerText = 'Belum Absen';
-                    badge.className = 'font-semibold text-amber-400';
-                }
+            if (activeSession && badge) {
+                db.ref('attendance/' + activeSession.id + '/records/' + currentUser.idNum).once('value', function(snap) {
+                    var rec = snap.val();
+                    if (rec) {
+                        badge.innerText = 'Status: ' + rec.status.toUpperCase() + ' (' + new Date(rec.timestamp).toLocaleTimeString() + ')';
+                        badge.className = 'font-semibold text-emerald-400';
+                    } else {
+                        badge.innerText = 'Belum Absen';
+                        badge.className = 'font-semibold text-amber-400';
+                    }
+                });
             }
         }
     }
@@ -175,16 +173,20 @@ function handleLogin(e) {
     e.preventDefault();
     var idNum = document.getElementById('loginId').value.trim();
     var pass = document.getElementById('loginPass').value;
-    var users = getUsers();
-    var user = users.find(function(u) { return u.idNum === idNum && u.password === pass; });
+    
+    db.ref('users').once('value', function(snapshot) {
+        var users = snapshot.val() || DEFAULT_USERS;
+        var usersArr = Array.isArray(users) ? users : Object.values(users);
+        var user = usersArr.find(function(u) { return u.idNum === idNum && u.password === pass; });
 
-    if (user) {
-        currentUser = user;
-        localStorage.setItem('puma_logged_in_user', JSON.stringify(currentUser));
-        navigateTo('dashboard');
-    } else {
-        alert('Student ID atau Kata Sandi salah!');
-    }
+        if (user) {
+            currentUser = user;
+            localStorage.setItem('puma_logged_in_user', JSON.stringify(currentUser));
+            navigateTo('dashboard');
+        } else {
+            alert('Student ID atau Kata Sandi salah!');
+        }
+    });
 }
 
 function renderRegister() {
@@ -218,17 +220,26 @@ function handleRegister(e) {
     var role = document.getElementById('regRole').value;
     var password = document.getElementById('regPass').value;
 
-    var users = getUsers();
-    var existingUser = users.find(function(u) { return u.idNum === idNum || u.email === email; });
-    if (existingUser) {
-        alert('Student ID (NIM) atau Email tersebut sudah terdaftar di sistem!');
-        return;
-    }
+    db.ref('users').once('value', function(snapshot) {
+        var users = snapshot.val() || DEFAULT_USERS;
+        var usersArr = Array.isArray(users) ? users : Object.values(users);
+        
+        var existingUser = usersArr.find(function(u) { return u.idNum === idNum || u.email === email; });
+        if (existingUser) {
+            alert('Student ID (NIM) atau Email tersebut sudah terdaftar di sistem!');
+            return;
+        }
 
-    users.push({ idNum: idNum, name: name, email: email, division: division, role: role, password: password, createdAt: new Date().toISOString() });
-    saveUsers(users);
-    alert('Registrasi berhasil! Silakan masuk.');
-    navigateTo('login');
+        usersArr.push({ idNum: idNum, name: name, email: email, division: division, role: role, password: password, createdAt: new Date().toISOString() });
+        db.ref('users').set(usersArr, function(error) {
+            if (!error) {
+                alert('Registrasi berhasil! Silakan masuk.');
+                navigateTo('login');
+            } else {
+                alert('Gagal mendaftar, coba lagi.');
+            }
+        });
+    });
 }
 
 function renderForgot() {
@@ -249,20 +260,22 @@ function renderForgot() {
 function handleForgot(e) {
     e.preventDefault();
     var email = document.getElementById('forgotEmail').value.trim();
-    var users = getUsers();
-    var user = users.find(function(u) { return u.email === email; });
+    db.ref('users').once('value', function(snapshot) {
+        var users = snapshot.val() || DEFAULT_USERS;
+        var usersArr = Array.isArray(users) ? users : Object.values(users);
+        var user = usersArr.find(function(u) { return u.email === email; });
 
-    if (user) {
-        alert('[Simulasi]\nHalo ' + user.name + ',\nKata sandi akun Anda adalah: "' + user.password + '"');
-        navigateTo('login');
-    } else {
-        alert('Email tidak ditemukan.');
-    }
+        if (user) {
+            alert('[Simulasi]\nHalo ' + user.name + ',\nKata sandi akun Anda adalah: "' + user.password + '"');
+            navigateTo('login');
+        } else {
+            alert('Email tidak ditemukan.');
+        }
+    });
 }
 
 function renderDashboard() {
     var isAdmin = currentUser.division === 'BPH' || currentUser.role === 'Ketua' || currentUser.role === 'Admin';
-    var currentSession = getCurrentSession();
 
     var adminSection = '';
     if (isAdmin) {
@@ -287,9 +300,9 @@ function renderDashboard() {
     if (isAdmin) {
         adminPanelContent = '<div class="space-y-3">' +
                             '<div><label class="block text-[11px] font-medium text-puma-300 mb-1">Judul Sesi</label><input type="text" id="sessionTitle" placeholder="Rapat Pleno Mingguan" class="clean-input w-full px-3.5 py-2 rounded-xl text-xs"></div>' +
-                            '<div><label class="block text-[11px] font-medium text-puma-300 mb-1">Durasi Deadline</label><select id="sessionDuration" class="clean-input w-full px-3.5 py-2 rounded-xl text-xs"><option value="5">5 Menit</option><option value="10" selected>10 Menit</option><option value="15">15 Menit</option></select></div>' +
+                            '<div><label class="block text-[11px] font-medium text-puma-300 mb-1">Durasi Deadline</label><select id="sessionDuration" class="clean-input w-full px-3.5 py-2 rounded-xl text-xs"><option value="5">5 Menit</option><option value="10" selected>10 Menit</option><option value="15">15 Menit</option><option value="60">1 Jam (Uji Coba)</option></select></div>' +
                             '<button onclick="createAttendanceSession()" class="w-full py-2.5 bg-puma-600 hover:bg-puma-500 text-white font-medium rounded-xl text-xs transition">Buat Barcode & Sesi</button>' +
-                            '<div id="adminSessionBox" class="mt-4 pt-4 border-t border-puma-900/60">' + renderAdminActiveSession(currentSession) + '</div>' +
+                            '<div id="adminSessionBox" class="mt-4 pt-4 border-t border-puma-900/60">' + renderAdminActiveSession(activeSession) + '</div>' +
                             '</div>';
     } else {
         adminPanelContent = '<div class="py-8 text-center text-xs text-puma-300">Sesi presensi diatur oleh BPH / Admin. Silakan masukkan kode absen atau klik QR di atas.</div>';
@@ -309,7 +322,7 @@ function renderDashboard() {
            '</div>' +
            '<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">' +
            '<div class="clean-card p-6 rounded-2xl"><div class="flex items-center justify-between mb-4"><h3 class="text-sm font-bold text-white flex items-center"><i class="fa-solid fa-qrcode text-puma-400 mr-2"></i> Sesi Presensi Aktif</h3>' + (isAdmin ? '<span class="text-[10px] text-emerald-400 font-semibold">Akses Admin</span>' : '<span class="text-[10px] text-blue-400">Scan / Lihat Sesi</span>') + '</div>' + adminPanelContent + '</div>' +
-           '<div class="clean-card p-6 rounded-2xl flex flex-col justify-between"><div><div class="flex items-center space-x-2 mb-4"><h3 class="text-sm font-bold text-white"><i class="fa-solid fa-clipboard-user text-puma-400 mr-2"></i> Input Kehadiran</h3></div><div id="memberSessionStatus" class="mb-4">' + renderMemberSessionStatus(currentSession) + '</div><form onsubmit="submitAttendance(event)" autocomplete="off" class="space-y-3"><div><label class="block text-[11px] font-medium text-puma-300 mb-1">Kode Absen / Scan QR</label><input type="text" id="inputAttendanceCode" autocomplete="off" required placeholder="PUMA-XXXX" class="clean-input w-full px-3.5 py-2.5 rounded-xl text-xs uppercase font-mono tracking-wider"></div><div><label class="block text-[11px] font-medium text-puma-300 mb-1">Status Kehadiran</label><select id="inputAttendanceStatus" required class="clean-input w-full px-3.5 py-2.5 rounded-xl text-xs"><option value="present">Present (Hadir)</option><option value="sick">Sick (Sakit)</option><option value="permit">Permit (Izin)</option></select></div><button type="submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl text-xs transition">Kirim Kehadiran</button></form></div><div class="mt-6 pt-4 border-t border-puma-900/60 flex justify-between text-xs text-puma-400"><span>Status:</span><span id="myAttendanceBadge" class="font-semibold">-</span></div></div>' +
+           '<div class="clean-card p-6 rounded-2xl flex flex-col justify-between"><div><div class="flex items-center space-x-2 mb-4"><h3 class="text-sm font-bold text-white"><i class="fa-solid fa-clipboard-user text-puma-400 mr-2"></i> Input Kehadiran</h3></div><div id="memberSessionStatus" class="mb-4">' + renderMemberSessionStatus(activeSession) + '</div><form onsubmit="submitAttendance(event)" autocomplete="off" class="space-y-3"><div><label class="block text-[11px] font-medium text-puma-300 mb-1">Kode Absen / Scan QR</label><input type="text" id="inputAttendanceCode" autocomplete="off" required placeholder="PUMA-XXXX" class="clean-input w-full px-3.5 py-2.5 rounded-xl text-xs uppercase font-mono tracking-wider"></div><div><label class="block text-[11px] font-medium text-puma-300 mb-1">Status Kehadiran</label><select id="inputAttendanceStatus" required class="clean-input w-full px-3.5 py-2.5 rounded-xl text-xs"><option value="present">Present (Hadir)</option><option value="sick">Sick (Sakit)</option><option value="permit">Permit (Izin)</option></select></div><button type="submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl text-xs transition">Kirim Kehadiran</button></form></div><div class="mt-6 pt-4 border-t border-puma-900/60 flex justify-between text-xs text-puma-400"><span>Status:</span><span id="myAttendanceBadge" class="font-semibold">-</span></div></div>' +
            '</div>' +
            adminSection +
            '</div>';
@@ -342,12 +355,13 @@ function createAttendanceSession() {
     var dur = durInput ? parseInt(durInput.value) : 10;
     var code = 'PUMA-' + Math.random().toString(36).substring(2, 6).toUpperCase();
     var now = new Date().getTime();
+    
     var session = { id: 's_' + now, title: title, code: code, expiresAt: now + dur * 60000 };
-    saveCurrentSession(session);
-    var att = getAttendance();
-    att[session.id] = { title: title, code: code, records: {} };
-    saveAttendance(att);
-    render();
+    
+    db.ref('current_session').set(session);
+    db.ref('attendance/' + session.id).set({ title: title, code: code, records: {} });
+    
+    alert('Sesi presensi berhasil dibuat! Kode Absen: ' + code);
 }
 
 function submitAttendance(e) {
@@ -356,106 +370,104 @@ function submitAttendance(e) {
     var code = codeInput ? codeInput.value.trim().toUpperCase() : '';
     var statusSelect = document.getElementById('inputAttendanceStatus');
     var status = statusSelect ? statusSelect.value : 'present';
-    var session = getCurrentSession();
     
-    if (!session || new Date().getTime() > session.expiresAt) {
-        alert('Sesi presensi tidak valid atau telah berakhir.');
+    if (!activeSession) {
+        alert('Belum ada sesi presensi yang dibuat oleh Admin/BPH.');
         return;
     }
-    if (code !== session.code) {
+    if (code !== activeSession.code) {
         alert('Kode absen salah! Pastikan memasukkan kode yang benar.');
         return;
     }
     
-    var att = getAttendance();
-    if (!att[session.id]) {
-        att[session.id] = { title: session.title, code: session.code, records: {} };
-    }
-    
-    // Simpan data presensi berdasarkan NIM user yang sedang login
-    att[session.id].records[currentUser.idNum] = { 
-        status: status, 
-        timestamp: new Date().toISOString() 
-    };
-    saveAttendance(att);
-    
-    alert('Kehadiran berhasil dicatat dengan status: ' + status.toUpperCase() + '!');
-    render();
+    db.ref('attendance/' + activeSession.id + '/records/' + currentUser.idNum).set({
+        status: status,
+        timestamp: new Date().toISOString()
+    }, function(error) {
+        if (!error) {
+            alert('Kehadiran berhasil dicatat dengan status: ' + status.toUpperCase() + '!');
+            render();
+        } else {
+            alert('Gagal mengirim absensi, periksa koneksi internet Anda.');
+        }
+    });
 }
 
 function updateAdminTable() {
     var tbody = document.getElementById('adminDatabaseTableBody');
     if (!tbody) return;
-    var users = getUsers();
-    var session = getCurrentSession();
-    var records = session && getAttendance()[session.id] ? getAttendance()[session.id].records : {};
-    tbody.innerHTML = '';
     
-    users.forEach(function(u, idx) {
-        var rec = records[u.idNum];
-        var statusBadge = '<span class="text-amber-400">Belum</span>';
-        var timeStr = '-';
+    db.ref('attendance').once('value', function(snapshot) {
+        var allAtt = snapshot.val() || {};
+        var sessionRecords = (activeSession && allAtt[activeSession.id]) ? allAtt[activeSession.id].records || {} : {};
         
-        if (rec) {
-            var colorClass = rec.status === 'present' ? 'text-emerald-400' : (rec.status === 'sick' ? 'text-blue-400' : 'text-purple-400');
-            statusBadge = '<span class="' + colorClass + ' font-semibold">' + rec.status.toUpperCase() + '</span>';
-            timeStr = new Date(rec.timestamp).toLocaleTimeString();
-        }
-        
-        tbody.innerHTML += '<tr>' +
-                           '<td class="px-3 py-2 text-puma-400">' + (idx + 1) + '</td>' +
-                           '<td class="px-3 py-2 font-medium text-white">' + u.name + '</td>' +
-                           '<td class="px-3 py-2 text-puma-300">' + u.email + '</td>' +
-                           '<td class="px-3 py-2">' + u.division + '</td>' +
-                           '<td class="px-3 py-2 text-puma-300">' + u.role + '</td>' +
-                           '<td class="px-3 py-2 text-center">' + statusBadge + '</td>' +
-                           '<td class="px-3 py-2 text-right font-mono">' + timeStr + '</td>' +
-                           '</tr>';
+        tbody.innerHTML = '';
+        allUsersData.forEach(function(u, idx) {
+            var rec = sessionRecords[u.idNum];
+            var statusBadge = '<span class="text-amber-400">Belum</span>';
+            var timeStr = '-';
+            
+            if (rec) {
+                var colorClass = rec.status === 'present' ? 'text-emerald-400' : (rec.status === 'sick' ? 'text-blue-400' : 'text-purple-400');
+                statusBadge = '<span class="' + colorClass + ' font-semibold">' + rec.status.toUpperCase() + '</span>';
+                timeStr = new Date(rec.timestamp).toLocaleTimeString();
+            }
+            
+            tbody.innerHTML += '<tr>' +
+                               '<td class="px-3 py-2 text-puma-400">' + (idx + 1) + '</td>' +
+                               '<td class="px-3 py-2 font-medium text-white">' + u.name + '</td>' +
+                               '<td class="px-3 py-2 text-puma-300">' + u.email + '</td>' +
+                               '<td class="px-3 py-2">' + u.division + '</td>' +
+                               '<td class="px-3 py-2 text-puma-300">' + u.role + '</td>' +
+                               '<td class="px-3 py-2 text-center">' + statusBadge + '</td>' +
+                               '<td class="px-3 py-2 text-right font-mono">' + timeStr + '</td>' +
+                               '</tr>';
+        });
     });
 }
 
 function exportAttendanceDocx() {
-    var session = getCurrentSession();
-    var users = getUsers();
-    var records = session && getAttendance()[session.id] ? getAttendance()[session.id].records : {};
-    var rows = '';
-    users.forEach(function(u, i) {
-        var r = records[u.idNum];
-        rows += '<tr><td style="border:1px solid #ddd;padding:6px;">' + (i+1) + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.name + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.division + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.role + '</td><td style="border:1px solid #ddd;padding:6px;">' + (r ? r.status.toUpperCase() : 'BELUM') + '</td><td style="border:1px solid #ddd;padding:6px;">' + (r ? new Date(r.timestamp).toLocaleTimeString() : '-') + '</td></tr>';
+    db.ref('attendance').once('value', function(snapshot) {
+        var allAtt = snapshot.val() || {};
+        var records = (activeSession && allAtt[activeSession.id]) ? allAtt[activeSession.id].records || {} : {};
+        var rows = '';
+        allUsersData.forEach(function(u, i) {
+            var r = records[u.idNum];
+            rows += '<tr><td style="border:1px solid #ddd;padding:6px;">' + (i+1) + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.name + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.division + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.role + '</td><td style="border:1px solid #ddd;padding:6px;">' + (r ? r.status.toUpperCase() : 'BELUM') + '</td><td style="border:1px solid #ddd;padding:6px;">' + (r ? new Date(r.timestamp).toLocaleTimeString() : '-') + '</td></tr>';
+        });
+        var html = '<html><body><h2 style="color:#cb3550;text-align:center;">Rekap Absensi PUMA IT</h2><p>Sesi: ' + (activeSession ? activeSession.title : 'Umum') + '</p><table style="width:100%;border-collapse:collapse;font-size:11pt;"><tr><th>No</th><th>Nama</th><th>Divisi</th><th>Jabatan</th><th>Status</th><th>Waktu</th></tr>' + rows + '</table></body></html>';
+        var blob = htmlDocx.asBlob(html);
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'Rekap_Absensi_' + Date.now() + '.docx';
+        a.click();
     });
-    var html = '<html><body><h2 style="color:#cb3550;text-align:center;">Rekap Absensi PUMA IT</h2><p>Sesi: ' + (session ? session.title : 'Umum') + '</p><table style="width:100%;border-collapse:collapse;font-size:11pt;"><tr><th>No</th><th>Nama</th><th>Divisi</th><th>Jabatan</th><th>Status</th><th>Waktu</th></tr>' + rows + '</table></body></html>';
-    var blob = htmlDocx.asBlob(html);
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'Rekap_Absensi_' + Date.now() + '.docx';
-    a.click();
 }
 
 function exportAttendancePDF() {
-    var jsPDF = window.jspdf.jsPDF;
-    var doc = new jsPDF();
-    var session = getCurrentSession();
-    doc.text("Rekapitulasi Kehadiran PUMA IT", 14, 20);
-    var users = getUsers();
-    var records = session && getAttendance()[session.id] ? getAttendance()[session.id].records : {};
-    var data = users.map(function(u, i) {
-        var r = records[u.idNum];
-        return [i+1, u.name, u.division, u.role, r ? r.status.toUpperCase() : 'BELUM', r ? new Date(r.timestamp).toLocaleTimeString() : '-'];
+    db.ref('attendance').once('value', function(snapshot) {
+        var allAtt = snapshot.val() || {};
+        var records = (activeSession && allAtt[activeSession.id]) ? allAtt[activeSession.id].records || {} : {};
+        var jsPDF = window.jspdf.jsPDF;
+        var doc = new jsPDF();
+        doc.text("Rekapitulasi Kehadiran PUMA IT", 14, 20);
+        var data = allUsersData.map(function(u, i) {
+            var r = records[u.idNum];
+            return [i+1, u.name, u.division, u.role, r ? r.status.toUpperCase() : 'BELUM', r ? new Date(r.timestamp).toLocaleTimeString() : '-'];
+        });
+        doc.autoTable({ startY: 28, head: [['No', 'Nama', 'Divisi', 'Jabatan', 'Status', 'Waktu']], body: data });
+        doc.save('Rekap_Absensi_' + Date.now() + '.pdf');
     });
-    doc.autoTable({ startY: 28, head: [['No', 'Nama', 'Divisi', 'Jabatan', 'Status', 'Waktu']], body: data });
-    doc.save('Rekap_Absensi_' + Date.now() + '.pdf');
 }
 
 render();
 
-// Sinkronisasi real-time periodik setiap detik untuk mendeteksi perubahan sesi dan timer
 setInterval(function() {
-    var session = getCurrentSession();
-    if (session) {
+    if (activeSession) {
         var now = new Date().getTime();
         var timer = document.getElementById('countdownTimer');
         if (timer) {
-            var left = Math.max(0, Math.floor((session.expiresAt - now) / 1000));
+            var left = Math.max(0, Math.floor((activeSession.expiresAt - now) / 1000));
             var m = Math.floor(left/60);
             var s = left%60;
             timer.innerText = m + 'm ' + (s < 10 ? '0' : '') + s + 's';
