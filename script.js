@@ -111,19 +111,31 @@ function render() {
                     var c = document.getElementById('qrCodeCanvas');
                     if (c) {
                         c.innerHTML = '';
-                        QRCode.toCanvas(c, cur.code, { width: 80, margin: 1 });
+                        // Membuat QR code yang jika discan/diklik otomatis mengisi kode absen
+                        QRCode.toCanvas(c, cur.code, { width: 80, margin: 1 }, function (error) {
+                            if (!error) {
+                                c.style.cursor = 'pointer';
+                                c.onclick = function() {
+                                    var inputCode = document.getElementById('inputAttendanceCode');
+                                    if (inputCode) {
+                                        inputCode.value = cur.code;
+                                        inputCode.focus();
+                                        alert('Kode sesi ' + cur.code + ' berhasil dimasukkan secara otomatis ke form kehadiran!');
+                                    }
+                                };
+                            }
+                        });
                     }
                 }, 20);
             }
         } else {
-            // Cek status kehadiran anggota pada sesi aktif
             var session = getCurrentSession();
             var badge = document.getElementById('myAttendanceBadge');
             if (session && badge) {
                 var att = getAttendance();
                 var records = att[session.id] ? att[session.id].records : {};
                 if (records[currentUser.idNum]) {
-                    badge.innerText = 'Hadir (' + new Date(records[currentUser.idNum].timestamp).toLocaleTimeString() + ')';
+                    badge.innerText = 'Status: ' + records[currentUser.idNum].status.toUpperCase() + ' (' + new Date(records[currentUser.idNum].timestamp).toLocaleTimeString() + ')';
                     badge.className = 'font-semibold text-emerald-400';
                 } else {
                     badge.innerText = 'Belum Absen';
@@ -141,7 +153,7 @@ function renderLogin() {
            '<form onsubmit="handleLogin(event)" autocomplete="off" class="space-y-4">' +
            '<div>' +
            '<label class="block text-xs font-medium text-puma-300 mb-1.5">Student ID (NIM)</label>' +
-           '<input type="text" id="loginId" autocomplete="off" required placeholder="0302025000" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm">' +
+           '<input type="text" id="loginId" autocomplete="off" required placeholder="Masukkan NIM Anda" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm">' +
            '</div>' +
            '<div>' +
            '<div class="flex justify-between items-center mb-1.5">' +
@@ -181,10 +193,10 @@ function renderRegister() {
            getLogoHtml(true) +
            '<form onsubmit="handleRegister(event)" autocomplete="off" class="space-y-4">' +
            '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">' +
-           '<div><label class="block text-xs font-medium text-puma-300 mb-1">Student ID (NIM)</label><input type="text" id="regId" autocomplete="off" required placeholder="0302025000" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
-           '<div><label class="block text-xs font-medium text-puma-300 mb-1">Nama Lengkap</label><input type="text" id="regName" autocomplete="off" required placeholder="Budi Santoso" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
+           '<div><label class="block text-xs font-medium text-puma-300 mb-1">Student ID (NIM)</label><input type="text" id="regId" autocomplete="off" required placeholder="Masukkan NIM" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
+           '<div><label class="block text-xs font-medium text-puma-300 mb-1">Nama Lengkap</label><input type="text" id="regName" autocomplete="off" required placeholder="Nama Lengkap" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
            '</div>' +
-           '<div><label class="block text-xs font-medium text-puma-300 mb-1">Email Institusi</label><input type="email" id="regEmail" autocomplete="off" required placeholder="budi@student.president.ac.id" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
+           '<div><label class="block text-xs font-medium text-puma-300 mb-1">Email Institusi</label><input type="email" id="regEmail" autocomplete="off" required placeholder="email@student.president.ac.id" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
            '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">' +
            '<div><label class="block text-xs font-medium text-puma-300 mb-1">Divisi PUMA</label><select id="regDiv" required class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"><option value="" disabled selected>Pilih Divisi</option><option value="BPH">BPH</option><option value="Divisi Internal">Divisi Internal</option><option value="Divisi External">Divisi External</option><option value="Divisi R&D">Divisi R&D</option><option value="Divisi RICM">Divisi RICM</option></select></div>' +
            '<div><label class="block text-xs font-medium text-puma-300 mb-1">Peran</label><select id="regRole" required class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"><option value="" disabled selected>Pilih Peran</option><option value="Ketua">Ketua</option><option value="Admin">Admin</option><option value="Anggota">Anggota</option></select></div>' +
@@ -207,8 +219,9 @@ function handleRegister(e) {
     var password = document.getElementById('regPass').value;
 
     var users = getUsers();
-    if (users.some(function(u) { return u.idNum === idNum; })) {
-        alert('Student ID sudah terdaftar!');
+    var existingUser = users.find(function(u) { return u.idNum === idNum || u.email === email; });
+    if (existingUser) {
+        alert('Student ID (NIM) atau Email tersebut sudah terdaftar di sistem!');
         return;
     }
 
@@ -296,7 +309,7 @@ function renderDashboard() {
            '</div>' +
            '<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">' +
            '<div class="clean-card p-6 rounded-2xl"><div class="flex items-center justify-between mb-4"><h3 class="text-sm font-bold text-white flex items-center"><i class="fa-solid fa-qrcode text-puma-400 mr-2"></i> Generator Sesi Absen</h3>' + (isAdmin ? '<span class="text-[10px] text-emerald-400 font-semibold">Akses Admin</span>' : '<span class="text-[10px] text-rose-400">Khusus Admin</span>') + '</div>' + adminPanelContent + '</div>' +
-           '<div class="clean-card p-6 rounded-2xl flex flex-col justify-between"><div><div class="flex items-center space-x-2 mb-4"><h3 class="text-sm font-bold text-white"><i class="fa-solid fa-clipboard-user text-puma-400 mr-2"></i> Input Kehadiran</h3></div><div id="memberSessionStatus" class="mb-4">' + renderMemberSessionStatus(currentSession) + '</div><form onsubmit="submitAttendance(event)" autocomplete="off" class="space-y-3"><div><label class="block text-[11px] font-medium text-puma-300 mb-1">Kode Absen</label><input type="text" id="inputAttendanceCode" autocomplete="off" required placeholder="PUMA-XXXX" class="clean-input w-full px-3.5 py-2.5 rounded-xl text-xs uppercase font-mono tracking-wider"></div><button type="submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl text-xs transition">Kirim Kehadiran</button></form></div><div class="mt-6 pt-4 border-t border-puma-900/60 flex justify-between text-xs text-puma-400"><span>Status:</span><span id="myAttendanceBadge" class="font-semibold">-</span></div></div>' +
+           '<div class="clean-card p-6 rounded-2xl flex flex-col justify-between"><div><div class="flex items-center space-x-2 mb-4"><h3 class="text-sm font-bold text-white"><i class="fa-solid fa-clipboard-user text-puma-400 mr-2"></i> Input Kehadiran</h3></div><div id="memberSessionStatus" class="mb-4">' + renderMemberSessionStatus(currentSession) + '</div><form onsubmit="submitAttendance(event)" autocomplete="off" class="space-y-3"><div><label class="block text-[11px] font-medium text-puma-300 mb-1">Kode Absen / Scan QR</label><input type="text" id="inputAttendanceCode" autocomplete="off" required placeholder="PUMA-XXXX" class="clean-input w-full px-3.5 py-2.5 rounded-xl text-xs uppercase font-mono tracking-wider"></div><div><label class="block text-[11px] font-medium text-puma-300 mb-1">Status Kehadiran</label><select id="inputAttendanceStatus" required class="clean-input w-full px-3.5 py-2.5 rounded-xl text-xs"><option value="present">Present (Hadir)</option><option value="sick">Sick (Sakit)</option><option value="permit">Permit (Izin)</option></select></div><button type="submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl text-xs transition">Kirim Kehadiran</button></form></div><div class="mt-6 pt-4 border-t border-puma-900/60 flex justify-between text-xs text-puma-400"><span>Status:</span><span id="myAttendanceBadge" class="font-semibold">-</span></div></div>' +
            '</div>' +
            adminSection +
            '</div>';
@@ -311,7 +324,7 @@ function renderAdminActiveSession(session) {
     var s = timeLeft % 60;
     return '<div class="bg-puma-950/60 p-3.5 rounded-xl border border-puma-900/60 space-y-3">' +
            '<div class="flex justify-between items-center text-xs"><span class="font-bold text-white">' + session.title + '</span><span id="countdownTimer" class="font-mono bg-puma-900 px-2 py-0.5 rounded text-puma-200">' + m + 'm ' + (s < 10 ? '0' : '') + s + 's</span></div>' +
-           '<div class="flex items-center justify-between bg-black/40 p-2.5 rounded-lg"><span class="font-mono font-bold text-sm tracking-widest text-white">' + session.code + '</span><canvas id="qrCodeCanvas" class="w-20 h-20 bg-white p-1 rounded"></canvas></div>' +
+           '<div class="flex items-center justify-between bg-black/40 p-2.5 rounded-lg"><span class="font-mono font-bold text-sm tracking-widest text-white">' + session.code + '</span><div class="text-center"><canvas id="qrCodeCanvas" class="w-20 h-20 bg-white p-1 rounded cursor-pointer"></canvas><span class="text-[9px] text-puma-300 block mt-1">Klik QR untuk Auto-Isi</span></div></div>' +
            '</div>';
 }
 
@@ -341,6 +354,8 @@ function submitAttendance(e) {
     e.preventDefault();
     var codeInput = document.getElementById('inputAttendanceCode');
     var code = codeInput ? codeInput.value.trim().toUpperCase() : '';
+    var statusSelect = document.getElementById('inputAttendanceStatus');
+    var status = statusSelect ? statusSelect.value : 'present';
     var session = getCurrentSession();
     
     if (!session || new Date().getTime() > session.expiresAt) {
@@ -355,10 +370,13 @@ function submitAttendance(e) {
     if (!att[session.id]) {
         att[session.id] = { title: session.title, code: session.code, records: {} };
     }
-    att[session.id].records[currentUser.idNum] = { timestamp: new Date().toISOString() };
+    att[session.id].records[currentUser.idNum] = { 
+        status: status, 
+        timestamp: new Date().toISOString() 
+    };
     saveAttendance(att);
     
-    alert('Kehadiran berhasil dicatat!');
+    alert('Kehadiran berhasil dicatat dengan status: ' + status.toUpperCase() + '!');
     render();
 }
 
@@ -372,13 +390,18 @@ function updateAdminTable() {
     
     users.forEach(function(u, idx) {
         var rec = records[u.idNum];
+        var statusBadge = '<span class="text-amber-400">Belum</span>';
+        if (rec) {
+            var colorClass = rec.status === 'present' ? 'text-emerald-400' : (rec.status === 'sick' ? 'text-blue-400' : 'text-purple-400');
+            statusBadge = '<span class="' + colorClass + ' font-semibold">' + rec.status.toUpperCase() + '</span>';
+        }
         tbody.innerHTML += '<tr>' +
                            '<td class="px-3 py-2 text-puma-400">' + (idx + 1) + '</td>' +
                            '<td class="px-3 py-2 font-medium text-white">' + u.name + '</td>' +
                            '<td class="px-3 py-2 text-puma-300">' + u.email + '</td>' +
                            '<td class="px-3 py-2">' + u.division + '</td>' +
                            '<td class="px-3 py-2 text-puma-300">' + u.role + '</td>' +
-                           '<td class="px-3 py-2 text-center">' + (rec ? '<span class="text-emerald-400 font-semibold">Hadir</span>' : '<span class="text-amber-400">Belum</span>') + '</td>' +
+                           '<td class="px-3 py-2 text-center">' + statusBadge + '</td>' +
                            '<td class="px-3 py-2 text-right font-mono">' + (rec ? new Date(rec.timestamp).toLocaleTimeString() : '-') + '</td>' +
                            '</tr>';
     });
@@ -391,7 +414,7 @@ function exportAttendanceDocx() {
     var rows = '';
     users.forEach(function(u, i) {
         var r = records[u.idNum];
-        rows += '<tr><td style="border:1px solid #ddd;padding:6px;">' + (i+1) + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.name + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.division + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.role + '</td><td style="border:1px solid #ddd;padding:6px;">' + (r ? 'Hadir' : 'Belum') + '</td><td style="border:1px solid #ddd;padding:6px;">' + (r ? new Date(r.timestamp).toLocaleTimeString() : '-') + '</td></tr>';
+        rows += '<tr><td style="border:1px solid #ddd;padding:6px;">' + (i+1) + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.name + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.division + '</td><td style="border:1px solid #ddd;padding:6px;">' + u.role + '</td><td style="border:1px solid #ddd;padding:6px;">' + (r ? r.status.toUpperCase() : 'BELUM') + '</td><td style="border:1px solid #ddd;padding:6px;">' + (r ? new Date(r.timestamp).toLocaleTimeString() : '-') + '</td></tr>';
     });
     var html = '<html><body><h2 style="color:#cb3550;text-align:center;">Rekap Absensi PUMA IT</h2><p>Sesi: ' + (session ? session.title : 'Umum') + '</p><table style="width:100%;border-collapse:collapse;font-size:11pt;"><tr><th>No</th><th>Nama</th><th>Divisi</th><th>Jabatan</th><th>Status</th><th>Waktu</th></tr>' + rows + '</table></body></html>';
     var blob = htmlDocx.asBlob(html);
@@ -410,7 +433,7 @@ function exportAttendancePDF() {
     var records = session && getAttendance()[session.id] ? getAttendance()[session.id].records : {};
     var data = users.map(function(u, i) {
         var r = records[u.idNum];
-        return [i+1, u.name, u.division, u.role, r ? 'Hadir' : 'Belum', r ? new Date(r.timestamp).toLocaleTimeString() : '-'];
+        return [i+1, u.name, u.division, u.role, r ? r.status.toUpperCase() : 'BELUM', r ? new Date(r.timestamp).toLocaleTimeString() : '-'];
     });
     doc.autoTable({ startY: 28, head: [['No', 'Nama', 'Divisi', 'Jabatan', 'Status', 'Waktu']], body: data });
     doc.save('Rekap_Absensi_' + Date.now() + '.pdf');
