@@ -141,7 +141,7 @@ function renderLogin() {
            '<form onsubmit="handleLogin(event)" autocomplete="off" class="space-y-4">' +
            '<div>' +
            '<label class="block text-xs font-medium text-puma-300 mb-1.5">Student ID (NIM)</label>' +
-           '<input type="text" id="loginId" autocomplete="off" required placeholder="030202500023" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm">' +
+           '<input type="text" id="loginId" autocomplete="off" required placeholder="0302025000" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm">' +
            '</div>' +
            '<div>' +
            '<div class="flex justify-between items-center mb-1.5">' +
@@ -181,7 +181,7 @@ function renderRegister() {
            getLogoHtml(true) +
            '<form onsubmit="handleRegister(event)" autocomplete="off" class="space-y-4">' +
            '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">' +
-           '<div><label class="block text-xs font-medium text-puma-300 mb-1">Student ID (NIM)</label><input type="text" id="regId" autocomplete="off" required placeholder="030202500023" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
+           '<div><label class="block text-xs font-medium text-puma-300 mb-1">Student ID (NIM)</label><input type="text" id="regId" autocomplete="off" required placeholder="0302025000" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
            '<div><label class="block text-xs font-medium text-puma-300 mb-1">Nama Lengkap</label><input type="text" id="regName" autocomplete="off" required placeholder="Budi Santoso" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
            '</div>' +
            '<div><label class="block text-xs font-medium text-puma-300 mb-1">Email Institusi</label><input type="email" id="regEmail" autocomplete="off" required placeholder="budi@student.president.ac.id" class="clean-input w-full px-4 py-2.5 rounded-xl text-sm"></div>' +
